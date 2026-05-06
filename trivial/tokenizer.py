@@ -43,12 +43,14 @@ patterns = [
     [r"\|\|", "||"],
     [r"\!", "!"],
     [r"\=", "="],
+    # Dot access token: x.a is parsed later as indexed object access.
     [r"\.", "."],
     [r"\[", "["],
     [r"\]", "]"],
     [r"\,", ","],
     [r"\:", ":"],
     [r"\;", ";"],
+    [r"\?", "?"], # added a question mark for ternary operator, might need to be moved up  
     [r".", "error"],  # unexpected content
 ]
 
@@ -96,7 +98,8 @@ def tokenize(characters, generated_tags=test_generated_tags):
         if token["tag"] == "boolean":
             token["value"] = True if value == "true" else False
 
-        # save the current column and line
+        # save the current position, column, and line
+        token["position"] = position
         token["column"] = current_column
         token["line"] = current_line
 
@@ -134,7 +137,7 @@ def tokenize(characters, generated_tags=test_generated_tags):
 
 def test_simple_tokens():
     print("testing simple tokens...")
-    examples = ".,[,],+,-,*,/,(,),{,},;,:,!,&&,||,<,>,<=,>=,==,!=,=,%".split(",")
+    examples = ".,[,],+,-,*,/,(,),{,},;,:,?,!,&&,||,<,>,<=,>=,==,!=,=,%".split(",") # added a question mark for ternary operator testing
     examples.append(",")
     for example in examples:
         t = tokenize(example)[0]
@@ -166,7 +169,7 @@ def test_number_tokens():
 
 def clean(tokens):
     for token in tokens.copy():
-        for key in ["line", "column"]:
+        for key in ["line", "column", "position"]:
             if key in token:
                 del token[key]
     return tokens

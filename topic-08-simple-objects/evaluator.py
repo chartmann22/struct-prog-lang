@@ -109,7 +109,19 @@ def ast_to_string(ast):
         if "else" in ast and ast["else"]:  # Check existence
             s = s + " else {" + ast_to_string(ast["else"]) + "}"
         return s
-
+    
+    if ast["tag"] == "ternary":
+        s = (
+            "("
+            + ast_to_string(ast["condition"])
+            + " ? "
+            + ast_to_string(ast["true"])
+            + " : "
+            + ast_to_string(ast["false"])
+            + ")"
+        )
+        return s # is return s needed or not? come back...
+    
     if ast["tag"] == "while":
         s = (
             "while ("
@@ -468,6 +480,20 @@ def evaluate(ast, environment):
                     return val, status
         return None, None  # Normal completion of if/else
 
+    # ternary operator added here, mimicking the precedented structure
+    if ast["tag"] == "ternary":
+        condition_value, cond_status = evaluate(ast["condition"], environment)
+        if cond_status == "exit":
+            return condition_value, "exit"
+
+        branch = ast["true"] if is_truthy(condition_value) else ast["false"]
+        val, status = evaluate(branch, environment)
+
+        if status == "exit":
+            return val, "exit"
+
+        return val, status
+
     if ast["tag"] == "while":
         # Condition is evaluated in the current environment
         condition_value, cond_status = evaluate(ast["condition"], environment)
@@ -795,6 +821,21 @@ def test_evaluate_if_statement():
     equals("if(0) {x=1}", {"x": 0}, None, {"x": 0})
     equals("if(1) {x=1} else {x=2}", {"x": 0}, None, {"x": 1})
     equals("if(0) {x=1} else {x=2}", {"x": 0}, None, {"x": 2})
+
+# test cases for ternary operator
+def test_evaluate_ternary_expression():
+    print("testing evaluate_ternary_expression")
+    equals("true ? 1 : 2", {}, 1)
+    equals("false ? 1 : 2", {}, 2)
+    equals("0 ? 1 : 2", {}, 2)
+    equals('"hello" ? 1 : 2', {}, 1)
+    equals("[] ? 1 : 2", {}, 2)
+    equals("x = true ? 10 : 20; x", {}, 10, {"x": 10})
+    equals("true ? 1 + 2 : 3 + 4", {}, 3)
+    equals("false ? 1 + 2 : 3 + 4", {}, 7)
+    # proves non-selected branch is not evaluated
+    equals("true ? 99 : missingIdentifier", {}, 99)
+    equals("false ? missingIdentifier : 88", {}, 88)
 
 
 def test_evaluate_while_statement():
@@ -1239,6 +1280,7 @@ if __name__ == "__main__":
     test_evaluate_negation()
     test_evaluate_print_statement()
     test_evaluate_if_statement()
+    test_evaluate_ternary_expression()
     test_evaluate_while_statement()
     test_evaluate_assignment_statement()
     test_evaluate_function_literal()

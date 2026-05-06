@@ -5,9 +5,11 @@ grammar = """
     simple_expression = identifier | <boolean> | <number> | <string> | <null> | list | object | ("-" simple_expression) | ("!" simple_expression) | function | ( "(" expression ")" )
 
     list = "[" expression { "," expression } "]"
+    # Objects are dictionary-like values with explicit key:value pairs.
     object = "{" [ expression ":" expression { "," expression ":" expression } ] "}"
     function = "function" "(" [ identifier { "," identifier } ] ")" statements
 
+    # Dot access is syntactic sugar for indexing with a string key.
     complex_expression = simple_expression { ("[" expression "]") | ("." identifier) | "(" [ expression { "," expression } ] ")" }
 
     arithmetic_factor = complex_expression
@@ -18,7 +20,8 @@ grammar = """
     logical_term = logical_factor { "&&" logical_factor }
     logical_expression = logical_term { "||" logical_term }
 
-    assignment_expression = [ "extern" ] logical_expression [ "=" assignment_expression ]
+    conditional_expression = logical_expression [ "?" expression ":" expression ]
+    assignment_expression = [ "extern" ] conditional_expression [ "=" assignment_expression ]
     expression = assignment_expression
 
     return_statement = "return" [ expression ]
@@ -183,106 +186,33 @@ def test_parse_list():
     """
     print("testing parse_list...")
     ast, tokens = parse_list(tokenize("[1,2,3]"))
-    print(ast)
-
-    print("done")
-    exit(0)
-
-    # assert ast == {
-    #     "tag": "list",
-    #     "items": [
-    #         {"tag": "number", "value": 1},
-    #         {"tag": "number", "value": 2},
-    #         {"tag": "number", "value": 3},
-    #     ],
-    # }
-    # ast, tokens = parse_list(tokenize("[1,2,3,]"))
-    # assert ast == {
-    #     "tag": "list",
-    #     "items": [
-    #         {"tag": "number", "value": 1},
-    #         {"tag": "number", "value": 2},
-    #         {"tag": "number", "value": 3},
-    #     ],
-    # }
-    # ast, tokens = parse_list(tokenize("[1,2,3,[4,5]]"))
-    # assert ast == {
-    #     "tag": "list",
-    #     "items": [
-    #         {"tag": "number", "value": 1},
-    #         {"tag": "number", "value": 2},
-    #         {"tag": "number", "value": 3},
-    #         {
-    #             "tag": "list",
-    #             "items": [{"tag": "number", "value": 4}, {"tag": "number", "value": 5}],
-    #         },
-    #     ],
-    # }
-
-    # ast, tokens = parse_list(tokenize("[]"))
-    # assert ast == {"items": [], "tag": "list"}
-
-    ast = parse(
-        tokenize(
-            """
-        function double(x) { return x+x };
-        y = [1,2,3,double(4)]
-        """
-        )
-    )
-    print(ast)
-    print("-----")
-    ast = clean(ast)
-    print(ast)
-    exit(0)
     assert ast == {
-        "tag": "program",
-        "statements": [
+        "tag": "list",
+        "items": [
+            {"tag": "number", "value": 1},
+            {"tag": "number", "value": 2},
+            {"tag": "number", "value": 3},
+        ],
+    }
+
+    ast, tokens = parse_list(tokenize("[1,2,3,[4,5]]"))
+    assert ast == {
+        "tag": "list",
+        "items": [
+            {"tag": "number", "value": 1},
+            {"tag": "number", "value": 2},
+            {"tag": "number", "value": 3},
             {
-                "tag": "assign",
-                "target": {"tag": "identifier", "value": "double"},
-                "value": {
-                    "tag": "function",
-                    "parameters": [
-                        {
-                            "tag": "identifier",
-                            "value": "x",
-                        }
-                    ],
-                    "body": {
-                        "tag": "statement_list",
-                        "statements": [
-                            {
-                                "tag": "return",
-                                "value": {
-                                    "tag": "+",
-                                    "left": {"tag": "identifier", "value": "x"},
-                                    "right": {"tag": "identifier", "value": "x"},
-                                },
-                            }
-                        ],
-                    },
-                },
-            },
-            {
-                "tag": "assign",
-                "target": {"tag": "identifier", "value": "y"},
-                "value": {
-                    "tag": "list",
-                    "items": [
-                        {"tag": "number", "value": 1},
-                        {"tag": "number", "value": 2},
-                        {"tag": "number", "value": 3},
-                        {
-                            "tag": "call",
-                            "function": {"tag": "identifier", "value": "double"},
-                            "arguments": [{"tag": "number", "value": 4}],
-                        },
-                    ],
-                },
+                "tag": "list",
+                "items": [
+                    {"tag": "number", "value": 4},
+                    {"tag": "number", "value": 5},
+                ],
             },
         ],
     }
+    ast, tokens = parse_list(tokenize("[]"))
+    assert ast == {"tag": "list", "items": []}
 
 
 def parse_object(tokens):
@@ -400,16 +330,28 @@ def parse_function(tokens):
         assert (
             tokens[0]["tag"] == "identifier"
         ), f"Expected identifier at position {tokens[0]['position']}"
-        parameters.append(tokens[0])
+        parameters.append(
+            {
+                "tag": "identifier",
+                "value": tokens[0]["value"],
+                "position": tokens[0]["position"],
+            }
+        )
         tokens = tokens[1:]
         while tokens[0]["tag"] == ",":
             tokens = tokens[1:]
             assert (
                 tokens[0]["tag"] == "identifier"
             ), f"Expected identifier at position {tokens[0]['position']}"
-            parameters.append(tokens[0])
+            parameters.append(
+                {
+                    "tag": "identifier",
+                    "value": tokens[0]["value"],
+                    "position": tokens[0]["position"],
+                }
+            )
             tokens = tokens[1:]
-    assert tokens[0]["tag"] == ")", f"Expected ']' at position {tokens[0]['position']}"
+    assert tokens[0]["tag"] == ")", f"Expected ')' at position {tokens[0]['position']}"
     tokens = tokens[1:]
     body_statements, tokens = parse_statement_list(tokens)
     return {
@@ -499,6 +441,7 @@ def parse_complex_expression(tokens):
     ast, tokens = parse_simple_expression(tokens)
     while tokens[0]["tag"] in ["[", ".", "("]:
         if tokens[0]["tag"] == "[":
+            # Bracket indexing is used for list indexing and object lookup.
             tokens = tokens[1:]
             index_ast, tokens = parse_expression(tokens)
             assert (
@@ -507,6 +450,7 @@ def parse_complex_expression(tokens):
             tokens = tokens[1:]
             ast = {"tag": "complex", "base": ast, "index": index_ast}
         if tokens[0]["tag"] == ".":
+            # x.a becomes x["a"] at parse time.
             tokens = tokens[1:]
             assert (
                 tokens[0]["tag"] == "identifier"
@@ -853,6 +797,58 @@ def test_parse_logical_expression():
         },
     }
 
+# conditional expressions content added here
+def parse_conditional_expression(tokens):
+    """
+    conditional_expression = logical_expression [ "?" expression ":" expression ]
+    """
+    condition, tokens = parse_logical_expression(tokens)
+    if tokens[0]["tag"] == "?":
+        tokens = tokens[1:]
+        true_expr, tokens = parse_expression(tokens)
+        assert (
+            tokens[0]["tag"] == ":"
+        ), f"Expected ':' at position {tokens[0]['position']}"
+        tokens = tokens[1:]
+        false_expr, tokens = parse_expression(tokens)
+        return {
+            "tag": "ternary",
+            "condition": condition,
+            "true": true_expr,
+            "false": false_expr,
+        }, tokens
+    return condition, tokens
+
+def test_parse_conditional_expression():
+    """
+    conditional_expression = logical_expression [ "?" expression ":" expression ]
+    """
+    print("testing parse_conditional_expression...")
+
+    ast, tokens = parse_conditional_expression(tokenize("x"))
+    assert ast == {"tag": "identifier", "value": "x"}
+
+    ast, tokens = parse_conditional_expression(tokenize("x ? y : z"))
+    assert ast == {
+        "tag": "ternary",
+        "condition": {"tag": "identifier", "value": "x"},
+        "true": {"tag": "identifier", "value": "y"},
+        "false": {"tag": "identifier", "value": "z"},
+    }
+
+    ast, tokens = parse_conditional_expression(tokenize("x ? y : z ? a : b"))
+    assert ast == {
+        "tag": "ternary",
+        "condition": {"tag": "identifier", "value": "x"},
+        "true": {"tag": "identifier", "value": "y"},
+        "false": {
+            "tag": "ternary",
+            "condition": {"tag": "identifier", "value": "z"},
+            "true": {"tag": "identifier", "value": "a"},
+            "false": {"tag": "identifier", "value": "b"},
+        },
+    }
+
 
 def parse_assignment_expression(tokens):
     """
@@ -863,7 +859,7 @@ def parse_assignment_expression(tokens):
         extern = True
         tokens = tokens[1:]
 
-    left, tokens = parse_logical_expression(tokens)
+    left, tokens = parse_conditional_expression(tokens) # change made here to support conditional expressions on the left-hand side of assignments
 
     if tokens[0]["tag"] == "=":
         tokens = tokens[1:]
@@ -885,7 +881,7 @@ def parse_assignment_expression(tokens):
 
 def test_parse_assignment_expression():
     """
-    assignment_expression = [ "extern" ] logical_expression [ "=" assignment_expression ]
+    assignment_expression = [ "extern" ] conditional_expression [ "=" assignment_expression ]
     """
     print("testing parse_assignment_expression...")
 
@@ -1601,6 +1597,7 @@ if __name__ == "__main__":
         test_parse_logical_factor,
         test_parse_logical_term,
         test_parse_logical_expression,
+        test_parse_conditional_expression,
         test_parse_assignment_expression,
         test_parse_expression,
         test_parse_statement_list,
@@ -1620,6 +1617,33 @@ if __name__ == "__main__":
 
     test_functions = [
         test_parse_simple_expression,
+        test_parse_list,
+        test_parse_object,
+        test_parse_function,
+        test_parse_complex_expression,
+        test_parse_arithmetic_factor,
+        test_parse_arithmetic_term,
+        test_parse_arithmetic_expression,
+        test_parse_relational_expression,
+        test_parse_logical_factor,
+        test_parse_logical_term,
+        test_parse_logical_expression,
+        test_parse_conditional_expression,
+        test_parse_assignment_expression,
+        test_parse_expression,
+        test_parse_statement_list,
+        test_parse_if_statement,
+        test_parse_while_statement,
+        test_parse_return_statement,
+        test_parse_print_statement,
+        test_parse_function_statement,
+        test_parse_exit_statement,
+        test_parse_break_statement,
+        test_parse_continue_statement,
+        test_parse_import_statement,
+        test_parse_assert_statement,
+        test_parse_statement,
+        test_parse_program,
     ]
     test_grammar = grammar
 
